@@ -13,6 +13,7 @@ const config = {
 
 const game = new Phaser.Game(config);
 let logic = new GameLogic();
+let hand; // 手勢操作管家 (處理拖拽細節)
 let sprites = [];
 let tileSize = 60;
 let offset = { x: 45, y: 350 }; 
@@ -86,7 +87,12 @@ function create() {
         fontSize: '16px', color: '#ffffff' 
     });
 
-    this.add.text(225, 310, "滑動方塊進行消除", { fontSize: '14px', color: '#888' }).setOrigin(0.5);
+    this.add.text(225, 310, "拖拽方塊進行消除", { fontSize: '14px', color: '#888' }).setOrigin(0.5);
+
+    // --- 3. 初始化 Hand (傳入 swapTiles 作為回調) ---
+    hand = new Hand(this, logic, tileSize, offset, (p1, p2) => {
+        swapTiles(this, p1, p2);
+    });
 
     createBoard(this);
 }
@@ -119,62 +125,63 @@ function renderTile(scene, r, c) {
     sprite.setDisplaySize(50, 50);
     sprite.setData('pos', {r, c});
     
-    sprite.on('pointerdown', () => handleSelect(scene, sprite));
+    // --- 新增：紀錄原始座標供 Hand 使用 ---
+    sprite.setData('originX', x);
+    sprite.setData('originY', y);
+    
+    // 啟用拖拽功能
+    scene.input.setDraggable(sprite); 
+    
     sprites[r][c] = sprite;
     return sprite;
 }
 
-let firstSelect = null;
-function handleSelect(scene, sprite) {
-    if (isAnimating) return;
-    if (!firstSelect) {
-        firstSelect = sprite;
-        sprite.setAlpha(0.6).setScale(1.1);
-    } else {
-        let p1 = firstSelect.getData('pos');
-        let p2 = sprite.getData('pos');
-        if (Math.abs(p1.r - p2.r) + Math.abs(p1.c - p2.c) === 1) {
-            swapTiles(scene, p1, p2);
-        }
-        firstSelect.setAlpha(1).setScale(1);
-        firstSelect = null;
-    }
-}
-
+// 移除原本的 handleSelect，改由 swapTiles 由 hand.js 觸發
 async function swapTiles(scene, p1, p2) {
     isAnimating = true;
+    hand.setAnimating(true); // 鎖定操作
+
     let temp = logic.board[p1.r][p1.c];
     logic.board[p1.r][p1.c] = logic.board[p2.r][p2.c];
     logic.board[p2.r][p2.c] = temp;
+
     await performSwapAnimation(scene, p1, p2);
+
     let matches = logic.checkMatches();
     if (matches.length > 0) {
         await processMatches(scene, matches);
     } else {
+        // 回彈邏輯：沒有匹配則換回來
         let undo = logic.board[p1.r][p1.c];
         logic.board[p1.r][p1.c] = logic.board[p2.r][p2.c];
         logic.board[p2.r][p2.c] = undo;
         await performSwapAnimation(scene, p1, p2);
     }
+
     isAnimating = false;
+    hand.setAnimating(false); // 解除鎖定
 }
 
 function performSwapAnimation(scene, p1, p2) {
     return new Promise(resolve => {
         let s1 = sprites[p1.r][p1.c];
         let s2 = sprites[p2.r][p2.c];
+        
+        let x1 = offset.x + p1.c * tileSize;
+        let y1 = offset.y + p1.r * tileSize;
+        let x2 = offset.x + p2.c * tileSize;
+        let y2 = offset.y + p2.r * tileSize;
+
         scene.tweens.add({
-            targets: s1,
-            x: offset.x + p2.c * tileSize,
-            y: offset.y + p2.r * tileSize,
-            duration: 200, ease: 'Power1'
+            targets: s1, x: x2, y: y2, duration: 200, ease: 'Power2',
+            onComplete: () => hand.updateOrigin(s1, x2, y2)
         });
+
         scene.tweens.add({
-            targets: s2,
-            x: offset.x + p1.c * tileSize,
-            y: offset.y + p1.r * tileSize,
-            duration: 200, ease: 'Power1',
+            targets: s2, x: x1, y: y1, duration: 200, ease: 'Power2',
             onComplete: () => {
+                hand.updateOrigin(s2, x1, y1);
+                // 更新 sprites 陣列與數據同步
                 sprites[p1.r][p1.c] = s2;
                 sprites[p2.r][p2.c] = s1;
                 s1.setData('pos', { r: p2.r, c: p2.c });
@@ -230,12 +237,14 @@ function handleMonsterTurn(scene) {
     });
     if (logic.playerHP <= 0) {
         isAnimating = true;
+        hand.setAnimating(true);
         setTimeout(() => {
             if (confirm("你戰敗了！要觀看影片復活並恢復 50% 生命嗎？")) {
                 logic.revivePlayer();
                 playerHPText.setText(`PLAYER HP: ${logic.playerHP} / ${logic.playerMaxHP}`);
                 saveGameProgress();
                 isAnimating = false;
+                hand.setAnimating(false);
             } else {
                 alert("挑戰失敗！進度將重置。");
                 localStorage.removeItem('match3_save_data');
@@ -249,6 +258,7 @@ function handleMonsterTurn(scene) {
 
 function handleVictory(scene) {
     isAnimating = true;
+    hand.setAnimating(true);
     // 呼叫邏輯層處理 EXP 並進入下一關
     const result = logic.nextLevel(); 
 
@@ -265,6 +275,7 @@ function handleVictory(scene) {
         saveGameProgress();
         scene.scene.restart();
         isAnimating = false;
+        hand.setAnimating(false);
     }, 2500);
 }
 
@@ -298,12 +309,18 @@ async function dropAndFill(scene) {
                 sprites[r + emptySpots][c] = sprite;
                 sprites[r][c] = null;
                 sprite.setData('pos', { r: r + emptySpots, c: c });
+                
                 dropTweens.push(new Promise(res => {
+                    let targetY = offset.y + (r + emptySpots) * tileSize;
                     scene.tweens.add({
                         targets: sprite,
-                        y: offset.y + (r + emptySpots) * tileSize,
+                        y: targetY,
                         duration: 300, ease: 'Back.easeOut',
-                        onComplete: res
+                        onComplete: () => {
+                            // 同步新的原始座標
+                            hand.updateOrigin(sprite, sprite.x, targetY);
+                            res();
+                        }
                     });
                 }));
             }
@@ -315,11 +332,15 @@ async function dropAndFill(scene) {
             let sprite = renderTile(scene, r, c);
             sprite.y = offset.y - (i + 1) * tileSize;
             dropTweens.push(new Promise(res => {
+                let targetY = offset.y + r * tileSize;
                 scene.tweens.add({
                     targets: sprite,
-                    y: offset.y + r * tileSize,
+                    y: targetY,
                     duration: 300, ease: 'Back.easeOut',
-                    onComplete: res
+                    onComplete: () => {
+                        hand.updateOrigin(sprite, sprite.x, targetY);
+                        res();
+                    }
                 });
             }));
         }

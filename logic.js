@@ -34,8 +34,8 @@ class GameLogic {
         this.monsterMaxHP += 500;
         this.monsterHP = this.monsterMaxHP;
 
-        // 2. 玩家獎勵：過關時恢復 30% 生命值，但不超過上限
-        this.playerHP = Math.min(this.playerMaxHP, this.playerHP + Math.floor(this.playerMaxHP * 0.3));
+        // 2. 玩家獎勵：過關時恢復 100% 生命值，但不超過上限(this.playerMaxHP*倍數)
+        this.playerHP = Math.min(this.playerMaxHP, this.playerHP + Math.floor(this.playerMaxHP));
 
         // 3. 狀態重置
         this.monsterStatus.frozen = false;
@@ -185,3 +185,4 @@ class GameLogic {
         this.playerHP = Math.floor(this.playerMaxHP * 0.5);
     }
 }
+

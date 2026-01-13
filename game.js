@@ -5,12 +5,12 @@ const config = {
     backgroundColor: '#1a1a1a',
     parent: 'game-container',
     scale: {
-        // 關鍵屬性：自動調整大小以適應屏幕
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH
     },
     scene: { preload: preload, create: create, update: update }
 };
+
 const game = new Phaser.Game(config);
 let logic = new GameLogic();
 let sprites = [];
@@ -18,7 +18,7 @@ let tileSize = 60;
 let offset = { x: 45, y: 350 }; 
 
 // UI 變數
-let hpText, playerHPText, statusText;
+let hpText, playerHPText, statusText, levelText;
 let isAnimating = false;
 
 function preload() {
@@ -36,16 +36,35 @@ function preload() {
 }
 
 function create() {
-    // --- 戰鬥 UI 佈局 ---
-    // 戰鬥背景區域
+    // --- 1. 讀取存檔數據 ---
+    const savedData = localStorage.getItem('match3_save_data');
+    if (savedData) {
+        const data = JSON.parse(savedData);
+        logic.board = data.board;
+        logic.playerHP = data.playerHP;
+        logic.monsterHP = data.monsterHP;
+        logic.currentLevel = data.currentLevel || 1;
+        logic.monsterMaxHP = data.monsterMaxHP || 1000;
+    } else {
+        // 若無存檔，執行初始生成
+        logic.initBoard();
+        logic.currentLevel = 1;
+    }
+
+    // --- 2. 戰鬥 UI 佈局 ---
     this.add.rectangle(225, 160, 420, 280, 0x333333).setStrokeStyle(2, 0x555555);
     
+    // 關卡顯示
+    levelText = this.add.text(225, 20, `LEVEL: ${logic.currentLevel}`, { 
+        fontSize: '20px', color: '#aaaaaa' 
+    }).setOrigin(0.5);
+
     // 怪物資訊
-    hpText = this.add.text(50, 40, `BOSS HP: ${logic.monsterHP}`, { 
+    hpText = this.add.text(50, 40, `BOSS HP: ${Math.max(0, logic.monsterHP)}`, { 
         fontSize: '28px', color: '#ff4444', fontStyle: 'bold' 
     });
     
-    // 玩家資訊 (生財核心)
+    // 玩家資訊
     playerHPText = this.add.text(50, 80, `PLAYER HP: ${logic.playerHP}`, { 
         fontSize: '24px', color: '#44ff44', fontStyle: 'bold' 
     });
@@ -54,7 +73,6 @@ function create() {
         fontSize: '18px', color: '#ffffff' 
     });
 
-    // 提示文字
     this.add.text(225, 310, "滑動方塊進行消除", { fontSize: '14px', color: '#888' }).setOrigin(0.5);
 
     // 初始化棋盤
@@ -108,37 +126,28 @@ function handleSelect(scene, sprite) {
 async function swapTiles(scene, p1, p2) {
     isAnimating = true;
 
-    // 1. 執行邏輯交換
     let temp = logic.board[p1.r][p1.c];
     logic.board[p1.r][p1.c] = logic.board[p2.r][p2.c];
     logic.board[p2.r][p2.c] = temp;
 
-    // 2. 執行交換動畫
     await performSwapAnimation(scene, p1, p2);
 
-    // 3. 檢查是否有匹配
     let matches = logic.checkMatches();
 
     if (matches.length > 0) {
-        // 有消除：執行後續戰鬥與掉落
         await processMatches(scene, matches);
     } else {
-        // 沒消除：邏輯換回來
         let undo = logic.board[p1.r][p1.c];
         logic.board[p1.r][p1.c] = logic.board[p2.r][p2.c];
         logic.board[p2.r][p2.c] = undo;
-
-        // 執行「換回來」的動畫
         await performSwapAnimation(scene, p1, p2);
     }
 
     isAnimating = false;
 }
 
-// 提取出來的動畫函式，讓程式碼乾淨不亂跳
 function performSwapAnimation(scene, p1, p2) {
     return new Promise(resolve => {
-        // 交換 Sprite 引用
         let s1 = sprites[p1.r][p1.c];
         let s2 = sprites[p2.r][p2.c];
 
@@ -157,7 +166,6 @@ function performSwapAnimation(scene, p1, p2) {
             duration: 200,
             ease: 'Power1',
             onComplete: () => {
-                // 交換陣列中的 Sprite 引用並更新 Data
                 sprites[p1.r][p1.c] = s2;
                 sprites[p2.r][p2.c] = s1;
                 s1.setData('pos', { r: p2.r, c: p2.c });
@@ -169,12 +177,10 @@ function performSwapAnimation(scene, p1, p2) {
 }
 
 async function processMatches(scene, matches) {
-    // 1. 計算玩家攻擊
     let result = logic.calculateEffect(matches);
     hpText.setText(`BOSS HP: ${Math.max(0, logic.monsterHP)}`);
     statusText.setText(`倍率: x${result.currentMultiplier.toFixed(2)} | 狀態: ${result.hasFrozen ? '❄️凍結' : ''} ${result.hasBurning ? '🔥燃燒' : '正常'}`);
 
-    // 2. 消除動畫
     let promiseArray = [];
     matches.forEach(m => {
         let s = sprites[m.r][m.c];
@@ -190,16 +196,21 @@ async function processMatches(scene, matches) {
     });
     await Promise.all(promiseArray);
 
-    // 3. 掉落補位
     await dropAndFill(scene);
 
-    // 4. 檢查連擊 (Combo)
+    // 每次掉落完畢進行存檔
+    saveGameProgress();
+
     let nextMatches = logic.checkMatches();
     if (nextMatches.length > 0) {
         await processMatches(scene, nextMatches);
     } else {
-        // --- 玩家回合結束，怪物反擊 ---
-        handleMonsterTurn(scene);
+        // --- 核心改動：檢查勝利 ---
+        if (logic.monsterHP <= 0) {
+            handleVictory(scene);
+        } else {
+            handleMonsterTurn(scene);
+        }
     }
 }
 
@@ -207,32 +218,72 @@ function handleMonsterTurn(scene) {
     let dmg = logic.monsterAttack();
     playerHPText.setText(`PLAYER HP: ${logic.playerHP}`);
     
-    // 受傷特效：螢幕震動 + 紅光閃爍
     scene.cameras.main.shake(250, 0.02);
     let flash = scene.add.rectangle(225, 400, 450, 800, 0xff0000, 0.3);
     scene.tweens.add({
-        targets: flash,
-        alpha: 0,
-        duration: 300,
+        targets: flash, alpha: 0, duration: 300,
         onComplete: () => flash.destroy()
     });
 
-    // 檢查死亡 (觸發廣告點)
     if (logic.playerHP <= 0) {
         isAnimating = true;
         setTimeout(() => {
             if (confirm("你戰敗了！要觀看影片復活並恢復 50% 生命嗎？")) {
                 logic.revivePlayer();
                 playerHPText.setText(`PLAYER HP: ${logic.playerHP}`);
+                saveGameProgress();
                 isAnimating = false;
             } else {
-                alert("挑戰失敗！");
+                alert("挑戰失敗！進度將重置。");
+                localStorage.removeItem('match3_save_data');
                 location.reload();
             }
         }, 500);
     }
     
     logic.endTurn();
+    saveGameProgress();
+}
+
+// 勝利處理
+function handleVictory(scene) {
+    isAnimating = true;
+
+    let vText = scene.add.text(225, 400, `戰鬥勝利！\n下一關：Level ${logic.currentLevel + 1}`, {
+        fontSize: '40px', color: '#ffff00', fontStyle: 'bold', align: 'center',
+        backgroundColor: '#000000aa', padding: { x: 20, y: 20 }
+    }).setOrigin(0.5).setDepth(100);
+
+    scene.cameras.main.flash(500, 255, 255, 255);
+
+    setTimeout(() => {
+        // 更新邏輯數據進入下一關
+        if (typeof logic.nextLevel === 'function') {
+            logic.nextLevel();
+        } else {
+            // 保險方案：若 logic.js 尚未更新 nextLevel，則在此手動更新
+            logic.currentLevel++;
+            logic.monsterMaxHP = (logic.monsterMaxHP || 1000) + 500;
+            logic.monsterHP = logic.monsterMaxHP;
+            logic.initBoard();
+        }
+
+        saveGameProgress();
+        scene.scene.restart();
+        isAnimating = false;
+    }, 2500);
+}
+
+// 通用存檔函式
+function saveGameProgress() {
+    const gameState = {
+        currentLevel: logic.currentLevel,
+        playerHP: logic.playerHP,
+        monsterHP: logic.monsterHP,
+        monsterMaxHP: logic.monsterMaxHP,
+        board: logic.board
+    };
+    localStorage.setItem('match3_save_data', JSON.stringify(gameState));
 }
 
 async function dropAndFill(scene) {

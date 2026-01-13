@@ -134,15 +134,21 @@ class Hand {
         }
     }
 
+ 
     // 更新方塊的「家」座標
     updateOrigin(sprite, x, y) {
         sprite.setData('originX', x);
         sprite.setData('originY', y);
         sprite.x = x;
         sprite.y = y;
-        sprite.setScale(1).setAlpha(1);
+        
+        // --- 修正重點：使用 setDisplaySize 而非 setScale(1) ---
+        // 這樣能確保不論原始圖片多大，畫面上永遠維持 50x50
+        sprite.setDisplaySize(50, 50); 
+        sprite.setAlpha(1);
+        sprite.setAngle(0); // 確保消除動畫後的角度也被重置
     }
-
+    
     setAnimating(value) {
         this.isAnimating = value;
     }

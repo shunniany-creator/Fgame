@@ -7,18 +7,43 @@ class GameLogic {
         this.board = [];
         
         // --- 核心戰鬥數據 ---
-        this.playerHP = 100;      // 玩家生命值
+        this.currentLevel = 1;      // 當前關卡
+        this.playerHP = 100;       // 玩家生命值
         this.playerMaxHP = 100;
-        this.monsterHP = 1000;    // 怪物初始生命值
+        this.monsterMaxHP = 1000;   // 怪物最大生命值
+        this.monsterHP = 1000;     // 怪物初始生命值
         
         // --- 怪物狀態追蹤 ---
         this.monsterStatus = {
             frozen: false,          // 冰：消除後觸發，使怪物下次攻擊減傷
             burning: 0,             // 火：燃燒傷害剩餘回合
-            damageMultiplier: 1.0,  // 雷：永久提升玩家的傷害倍率
+            damageMultiplier: 1.0,  // 雷：提升玩家的傷害倍率 (過關後會重置)
             defenseDown: 0          // 毒：降低怪物防禦（增加基礎傷害）
         };
 
+        this.initBoard();
+    }
+
+    /**
+     * 進入下一關的數據處理
+     */
+    nextLevel() {
+        this.currentLevel++;
+        
+        // 1. 難度提升：每關怪物血量增加 500
+        this.monsterMaxHP += 500;
+        this.monsterHP = this.monsterMaxHP;
+
+        // 2. 玩家獎勵：過關時恢復 30% 生命值，但不超過上限
+        this.playerHP = Math.min(this.playerMaxHP, this.playerHP + Math.floor(this.playerMaxHP * 0.3));
+
+        // 3. 狀態重置
+        this.monsterStatus.frozen = false;
+        this.monsterStatus.burning = 0;
+        this.monsterStatus.defenseDown = 0;
+        this.monsterStatus.damageMultiplier = 1.0; // 雷的狀態已在此重置
+
+        // 4. 生成新關卡的隨機盤面
         this.initBoard();
     }
 
@@ -125,7 +150,8 @@ class GameLogic {
      * @returns {number} 怪物對玩家造成的最終傷害
      */
     monsterAttack() {
-        let baseAttack = 15; // 怪物基礎傷害
+        // 隨關卡提升怪物基礎傷害
+        let baseAttack = 15 + (this.currentLevel - 1) * 5; 
         
         // 如果怪物處於「冰凍」狀態，傷害減半
         if (this.monsterStatus.frozen) {

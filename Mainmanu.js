@@ -4,71 +4,44 @@ class MainMenu extends Phaser.Scene {
     }
 
     create() {
-        // --- 1. 背景與標題 ---
-        this.add.rectangle(225, 400, 450, 800, 0x1a1a1a); // 深色背景
-        this.add.text(225, 80, "元素傳說：消除戰記", {
-            fontSize: '32px', color: '#ffffff', fontStyle: 'bold'
+        // 背景
+        this.add.rectangle(225, 400, 450, 800, 0x1a1a1a);
+
+        // --- 頂部資源列 (不格式化數字) ---
+        // 銅錢
+        this.add.rectangle(110, 40, 180, 40, 0x000000, 0.6).setOrigin(0.5);
+        this.add.text(40, 40, "🪙", { fontSize: '24px' }).setOrigin(0.5);
+        this.coinText = this.add.text(120, 40, logic.currency.coins, {
+            fontSize: '20px', color: '#ffcc00', fontStyle: 'bold'
         }).setOrigin(0.5);
 
-        // --- 2. 貨幣列 (頂部) ---
-        this.drawTopBar();
+        // 鑽石
+        this.add.rectangle(340, 40, 180, 40, 0x000000, 0.6).setOrigin(0.5);
+        this.add.text(270, 40, "💎", { fontSize: '24px' }).setOrigin(0.5);
+        this.diamondText = this.add.text(350, 40, logic.currency.diamonds, {
+            fontSize: '20px', color: '#00ffff', fontStyle: 'bold'
+        }).setOrigin(0.5);
 
-        // --- 3. 角色展示區 ---
-        // 假設玩家目前選中的角色，這裡可以畫一個大一點的角色精靈
-        this.add.rectangle(225, 250, 200, 200, 0x333333).setStrokeStyle(2, 0xffff00);
-        this.add.text(225, 370, "當前出戰：炎之勇者·艾格", { fontSize: '18px', color: '#ff4444' }).setOrigin(0.5);
-        this.add.text(225, 400, `等級: ${logic.playerLevel}`, { fontSize: '16px', color: '#aaaaaa' }).setOrigin(0.5);
+        // 標題
+        this.add.text(225, 200, "Merge Dungeon Rush", {
+            fontSize: '36px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5);
 
-        // --- 4. 主功能按鈕 (中間到下方) ---
+        // 進入關卡按鈕
+        let startBtn = this.add.rectangle(225, 500, 240, 70, 0xee7700).setInteractive();
+        this.add.text(225, 500, "進入關卡", { fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
         
-        // 開始戰鬥按鈕
-        let startBtn = this.createButton(225, 500, "進入冒險 (第 " + logic.currentLevel + " 關)", 0xee7700, () => {
-            this.scene.start('GameScene'); // 跳轉到戰鬥畫面
+        startBtn.on('pointerdown', () => {
+            this.scene.start('GameScene'); // 切換到戰鬥畫面
         });
 
-        // 抽卡系統入口
-        let gachaBtn = this.createButton(120, 620, "召喚 (抽卡)", 0xaa00ff, () => {
-            alert("前往召喚祭壇...");
-        });
-
-        // 商店入口
-        let storeBtn = this.createButton(330, 620, "商店 (購買)", 0x00aa00, () => {
-            alert("前往銅錢商店...");
-        });
-
-        // 合成工房入口
-        let craftBtn = this.createButton(225, 720, "煉金工房 (合成角色)", 0x555555, () => {
-            alert("收集物資中：鐵礦 8/10...");
-        });
+        // 提示
+        this.add.text(225, 750, "當前進度：Level " + logic.currentLevel, { fontSize: '16px', color: '#888' }).setOrigin(0.5);
     }
 
-    drawTopBar() {
-        // 銅錢顯示
-        this.add.rectangle(110, 30, 180, 40, 0x000000, 0.5).setOrigin(0.5);
-        this.add.text(40, 30, "🪙", { fontSize: '20px' }).setOrigin(0.5);
-        this.coinText = this.add.text(110, 30, logic.currency.coins, { fontSize: '18px', color: '#ffcc00' }).setOrigin(0.5);
-
-        // 鑽石顯示
-        this.add.rectangle(340, 30, 180, 40, 0x000000, 0.5).setOrigin(0.5);
-        this.add.text(270, 30, "💎", { fontSize: '20px' }).setOrigin(0.5);
-        this.diamondText = this.add.text(340, 30, logic.currency.diamonds, { fontSize: '18px', color: '#00ffff' }).setOrigin(0.5);
-    }
-
-    // 通用按鈕封裝
-    createButton(x, y, label, color, callback) {
-        let btn = this.add.container(x, y);
-        let bg = this.add.rectangle(0, 0, 180, 60, color).setInteractive();
-        let txt = this.add.text(0, 0, label, { fontSize: '18px', color: '#fff' }).setOrigin(0.5);
-        
-        bg.on('pointerdown', () => {
-            bg.setScale(0.95);
-        });
-        bg.on('pointerup', () => {
-            bg.setScale(1);
-            callback();
-        });
-
-        btn.add([bg, txt]);
-        return btn;
+    update() {
+        // 即時刷新數字
+        this.coinText.setText(logic.currency.coins);
+        this.diamondText.setText(logic.currency.diamonds);
     }
 }

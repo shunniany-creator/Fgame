@@ -122,20 +122,19 @@ function renderTile(scene, r, c) {
     let type = logic.board[r][c];
     
     let sprite = scene.add.sprite(x, y, 'type' + type).setInteractive();
-    sprite.setDisplaySize(50, 50);
-    sprite.setData('pos', {r, c});
     
-    // --- 新增：紀錄原始座標供 Hand 使用 ---
+    // 確保一產生就鎖定大小
+    sprite.setDisplaySize(50, 50); 
+    
+    sprite.setData('pos', {r, c});
     sprite.setData('originX', x);
     sprite.setData('originY', y);
     
-    // 啟用拖拽功能
     scene.input.setDraggable(sprite); 
     
     sprites[r][c] = sprite;
     return sprite;
 }
-
 // 移除原本的 handleSelect，改由 swapTiles 由 hand.js 觸發
 async function swapTiles(scene, p1, p2) {
     isAnimating = true;
@@ -348,4 +347,5 @@ async function dropAndFill(scene) {
     await Promise.all(dropTweens);
 }
 function update() {}
+
 

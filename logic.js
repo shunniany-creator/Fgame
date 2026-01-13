@@ -14,7 +14,7 @@ class GameLogic {
         
         this.playerHP = 100;       // 玩家生命值
         this.playerMaxHP = 100;
-        this.baseAttackPower = 10;  // 基礎攻擊力 (新增)
+        this.baseAttackPower = 10;  // 玩家基礎攻擊力 (新增，取代原本固定的10)
         
         this.monsterMaxHP = 1000;   // 怪物最大生命值
         this.monsterHP = 1000;     // 怪物初始生命值
@@ -31,7 +31,8 @@ class GameLogic {
     }
 
     /**
-     * 處理經驗值與等級邏輯 (新增)
+     * 處理經驗值獲取與等級計算 (新增)
+     * 升級效果會先計算好，儲存在變數中，待下一關正式生效
      */
     gainEXP(amount) {
         this.playerEXP += amount;
@@ -42,9 +43,11 @@ class GameLogic {
             this.playerLevel++;
             leveledUp = true;
             
-            // 升級效果預設 (在 nextLevel 正式生效)
-            this.playerMaxHP += 20;    // 每級增加 20 血量上限
-            this.baseAttackPower += 2; // 每級增加 2 點基礎攻擊力
+            // 升級成長：每級增加 20 血量上限與 2 點基礎攻擊
+            this.playerMaxHP += 20;
+            this.baseAttackPower += 2;
+            
+            // 下一級所需經驗提升 20%
             this.expToNextLevel = Math.floor(this.expToNextLevel * 1.2);
         }
         return leveledUp;
@@ -54,34 +57,30 @@ class GameLogic {
      * 進入下一關的數據處理
      */
     nextLevel() {
-        // 1. 結算經驗值：基礎 50 + (關卡 * 10)
+        // 擊敗怪物獲得經驗值 (基礎 50 + 關卡加成)
         let expGained = 50 + (this.currentLevel * 10);
         let leveledUp = this.gainEXP(expGained);
 
         this.currentLevel++;
         
-        // 2. 難度提升：每關怪物血量增加 500
+        // 1. 難度提升：每關怪物血量增加 500
         this.monsterMaxHP += 500;
         this.monsterHP = this.monsterMaxHP;
 
-        // 3. 玩家獎勵與成長生效
-        if (leveledUp) {
-            // 升級效果在此生效：血量補滿至新的上限
-            this.playerHP = this.playerMaxHP;
-        } else {
-            // 未升級則執行原有的過關回血：恢復 30% 生命值，但不超過上限
-            this.playerHP = Math.min(this.playerMaxHP, this.playerHP + Math.floor(this.playerMaxHP * 0.3));
-        }
+        // 2. 玩家獎勵：過關時恢復全部生命值 (升級效果會在此時完全生效)
+        // 使用 Math.min 確保不超過新的 playerMaxHP
+        this.playerHP = Math.min(this.playerMaxHP, this.playerHP + Math.floor(this.playerMaxHP));
 
-        // 4. 狀態重置
+        // 3. 狀態重置
         this.monsterStatus.frozen = false;
         this.monsterStatus.burning = 0;
         this.monsterStatus.defenseDown = 0;
         this.monsterStatus.damageMultiplier = 1.0; // 雷的狀態已在此重置
 
-        // 5. 生成新關卡的隨機盤面
+        // 4. 生成新關卡的隨機盤面
         this.initBoard();
 
+        // 回傳結果供 game.js 顯示 UI
         return { expGained, leveledUp };
     }
 
@@ -151,7 +150,7 @@ class GameLogic {
             if (m.type === 3) stats.poison++;  // 毒
         });
 
-        // 1. 雷：永久增加當前倍率 (本關卡內)
+        // 1. 雷：永久增加當前倍率
         if (stats.thunder > 0) {
             this.monsterStatus.damageMultiplier += (0.05 * stats.thunder);
         }
@@ -161,7 +160,7 @@ class GameLogic {
             this.monsterStatus.defenseDown += (stats.poison * 2);
         }
 
-        // 3. 基礎傷害 (消除個數越多基礎越高，並隨玩家基礎攻擊力成長)
+        // 3. 基礎傷害 (使用動態基礎攻擊力)
         let baseDamage = matches.length * this.baseAttackPower;
         
         // 4. 計算總傷害

@@ -1,93 +1,87 @@
-class GameLogic {
+\class GameLogic {
     constructor() {
         this.rows = 7;
         this.cols = 7;
-        // 類型對應：0:ICE(冰), 1:FIRE(火), 2:THUNDER(雷), 3:POISON(毒)
         this.types = ['ICE', 'FIRE', 'THUNDER', 'POISON']; 
         this.board = [];
         
-        // --- 核心戰鬥數據 ---
-        this.currentLevel = 1;      // 當前關卡
-        this.playerLevel = 1;       // 玩家等級 (新增)
-        this.playerEXP = 0;         // 當前經驗值 (新增)
-        this.expToNextLevel = 100;  // 升級所需經驗值 (新增)
+        // --- 1. 貨幣與物資系統 (新增，解決 MainMenu 報錯) ---
+        this.currency = {
+            coins: 0,
+            diamonds: 0
+        };
+        this.inventory = {
+            materials: {}, 
+            ownedCharacters: ['Adventurer'] // 初始角色
+        };
+
+        // --- 2. 核心戰鬥數據 ---
+        this.currentLevel = 1;      
+        this.playerLevel = 1;        
+        this.playerEXP = 0;          
+        this.expToNextLevel = 100;   
         
-        this.playerHP = 100;       // 玩家生命值
+        this.playerHP = 100;        
         this.playerMaxHP = 100;
-        this.baseAttackPower = 10;  // 玩家基礎攻擊力 (新增，取代原本固定的10)
+        this.baseAttackPower = 10;   
         
-        this.monsterMaxHP = 1000;   // 怪物最大生命值
-        this.monsterHP = 1000;     // 怪物初始生命值
+        this.monsterMaxHP = 1000;    
+        this.monsterHP = 1000;      
         
-        // --- 怪物狀態追蹤 ---
+        // --- 3. 怪物狀態追蹤 ---
         this.monsterStatus = {
-            frozen: false,          // 冰：消除後觸發，使怪物下次攻擊減傷
-            burning: 0,             // 火：燃燒傷害剩餘回合
-            damageMultiplier: 1.0,  // 雷：提升玩家的傷害倍率 (過關後會重置)
-            defenseDown: 0          // 毒：降低怪物防禦（增加基礎傷害）
+            frozen: false,
+            burning: 0,
+            damageMultiplier: 1.0,
+            defenseDown: 0,
+            isParalyzed: false // 雷方塊機率觸發的麻痺
         };
 
         this.initBoard();
     }
 
-    /**
-     * 處理經驗值獲取與等級計算 (新增)
-     * 升級效果會先計算好，儲存在變數中，待下一關正式生效
-     */
+    // --- 經驗與等級邏輯 ---
     gainEXP(amount) {
         this.playerEXP += amount;
         let leveledUp = false;
-        
         while (this.playerEXP >= this.expToNextLevel) {
             this.playerEXP -= this.expToNextLevel;
             this.playerLevel++;
             leveledUp = true;
-            
-            // 升級成長：每級增加 20 血量上限與 2 點基礎攻擊
             this.playerMaxHP += 20;
             this.baseAttackPower += 2;
-            
-            // 下一級所需經驗提升 20%
             this.expToNextLevel = Math.floor(this.expToNextLevel * 1.2);
         }
         return leveledUp;
     }
 
-    /**
-     * 進入下一關的數據處理
-     */
     nextLevel() {
-        // 擊敗怪物獲得經驗值 (基礎 50 + 關卡加成)
+        // 獎勵金幣與經驗
         let expGained = 50 + (this.currentLevel * 10);
+        let coinGained = 20 + (this.currentLevel * 5);
+        
         let leveledUp = this.gainEXP(expGained);
+        this.currency.coins += coinGained;
 
         this.currentLevel++;
-        
-        // 1. 難度提升：每關怪物血量增加 500
         this.monsterMaxHP += 500;
         this.monsterHP = this.monsterMaxHP;
 
-        // 2. 玩家獎勵：過關時恢復全部生命值 (升級效果會在此時完全生效)
-        // 使用 Math.min 確保不超過新的 playerMaxHP
-        this.playerHP = Math.min(this.playerMaxHP, this.playerHP + Math.floor(this.playerMaxHP));
+        // 恢復生命 (全滿)
+        this.playerHP = this.playerMaxHP;
 
-        // 3. 狀態重置
+        // 狀態重置
         this.monsterStatus.frozen = false;
         this.monsterStatus.burning = 0;
         this.monsterStatus.defenseDown = 0;
-        this.monsterStatus.damageMultiplier = 1.0; // 雷的狀態已在此重置
+        this.monsterStatus.damageMultiplier = 1.0;
+        this.monsterStatus.isParalyzed = false;
 
-        // 4. 生成新關卡的隨機盤面
         this.initBoard();
-
-        // 回傳結果供 game.js 顯示 UI
-        return { expGained, leveledUp };
+        return { expGained, coinGained, leveledUp };
     }
 
-    /**
-     * 初始化 7x7 棋盤
-     * 確保初始生成的棋盤不會有現成的三連
-     */
+    // --- 棋盤邏輯 ---
     initBoard() {
         for (let r = 0; r < this.rows; r++) {
             this.board[r] = [];
@@ -101,19 +95,12 @@ class GameLogic {
         }
     }
 
-    /**
-     * 預防生成即時消除
-     */
     isPreMatch(r, c, type) {
         if (c >= 2 && this.board[r][c - 1] === type && this.board[r][c - 2] === type) return true;
         if (r >= 2 && this.board[r - 1][c] === type && this.board[r - 2][c] === type) return true;
         return false;
     }
 
-    /**
-     * 檢查全盤匹配
-     * @returns {Array} 包含所有匹配座標與類型的列表
-     */
     checkMatches() {
         let matchedTiles = new Set();
         for (let r = 0; r < this.rows; r++) {
@@ -138,39 +125,39 @@ class GameLogic {
         });
     }
 
-    /**
-     * 計算玩家該次消除的總效果
-     */
+    // --- 戰鬥效果計算 ---
     calculateEffect(matches) {
         let stats = { ice: 0, fire: 0, thunder: 0, poison: 0 };
         matches.forEach(m => {
-            if (m.type === 0) stats.ice++;     // 冰
-            if (m.type === 1) stats.fire++;    // 火
-            if (m.type === 2) stats.thunder++; // 雷
-            if (m.type === 3) stats.poison++;  // 毒
+            if (m.type === 0) stats.ice++;
+            if (m.type === 1) stats.fire++;
+            if (m.type === 2) stats.thunder++;
+            if (m.type === 3) stats.poison++;
         });
 
-        // 1. 雷：永久增加當前倍率
-        if (stats.thunder > 0) {
-            this.monsterStatus.damageMultiplier += (0.05 * stats.thunder);
+        // 火：五連大爆炸技能 (LV5 開啟)
+        let explosionBonus = 0;
+        if (this.playerLevel >= 5 && stats.fire >= 5) {
+            explosionBonus = this.baseAttackPower * 5;
         }
 
-        // 2. 毒：累積破防值
+        // 雷：增加倍率 + 機率麻痺
+        if (stats.thunder > 0) {
+            this.monsterStatus.damageMultiplier += (0.05 * stats.thunder);
+            if (Math.random() < 0.2) this.monsterStatus.isParalyzed = true; // 20% 麻痺
+        }
+
+        // 毒：累積破防
         if (stats.poison > 0) {
             this.monsterStatus.defenseDown += (stats.poison * 2);
         }
 
-        // 3. 基礎傷害 (使用動態基礎攻擊力)
         let baseDamage = matches.length * this.baseAttackPower;
-        
-        // 4. 計算總傷害
-        let finalDamage = (baseDamage + this.monsterStatus.defenseDown) * this.monsterStatus.damageMultiplier;
+        let finalDamage = (baseDamage + this.monsterStatus.defenseDown + explosionBonus) * this.monsterStatus.damageMultiplier;
 
-        // 5. 觸發冰火狀態
         if (stats.fire > 0) this.monsterStatus.burning = 1; 
         if (stats.ice > 0) this.monsterStatus.frozen = true;
 
-        // 更新怪物血量
         let damageDone = Math.floor(finalDamage);
         this.monsterHP -= damageDone;
 
@@ -178,46 +165,28 @@ class GameLogic {
             damageDealt: damageDone,
             hasFrozen: this.monsterStatus.frozen,
             hasBurning: this.monsterStatus.burning > 0,
+            isParalyzed: this.monsterStatus.isParalyzed,
             currentMultiplier: this.monsterStatus.damageMultiplier
         };
     }
 
-    /**
-     * 執行怪物反擊邏輯 (通常在玩家回合結束/消除結束後調用)
-     * @returns {number} 怪物對玩家造成的最終傷害
-     */
     monsterAttack() {
-        // 隨關卡提升怪物基礎傷害
-        let baseAttack = 15 + (this.currentLevel - 1) * 5; 
-        
-        // 如果怪物處於「冰凍」狀態，傷害減半
-        if (this.monsterStatus.frozen) {
-            baseAttack = Math.floor(baseAttack * 0.5);
+        if (this.monsterStatus.isParalyzed) {
+            this.monsterStatus.isParalyzed = false;
+            return 0; // 麻痺不造成傷害
         }
-
+        let baseAttack = 15 + (this.currentLevel - 1) * 5; 
+        if (this.monsterStatus.frozen) baseAttack = Math.floor(baseAttack * 0.5);
         this.playerHP -= baseAttack;
         if (this.playerHP < 0) this.playerHP = 0;
-
         return baseAttack;
     }
 
-    /**
-     * 回合結尾清算
-     * 處理狀態失效或持續傷害
-     */
     endTurn() {
-        // 冰凍僅持續一個動作回合
         this.monsterStatus.frozen = false;
-        
-        // 火：燃燒回合遞減 (若要做多回合燃燒可在這處理額外扣血)
-        if (this.monsterStatus.burning > 0) {
-            this.monsterStatus.burning--;
-        }
+        if (this.monsterStatus.burning > 0) this.monsterStatus.burning--;
     }
 
-    /**
-     * 玩家復活 (用於廣告觀看後的回調)
-     */
     revivePlayer() {
         this.playerHP = Math.floor(this.playerMaxHP * 0.5);
     }

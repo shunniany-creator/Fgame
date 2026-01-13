@@ -1,11 +1,10 @@
-// 1. 全域變數與邏輯層初始化
+// 1. 初始化邏輯層 (必須在 Scene 之前)
 let logic = new GameLogic(); 
 
-// 2. 定義戰鬥場景類別
 class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
-        // 將原本的全域變數移至類別屬性
+        // 初始化類別變數
         this.sprites = [];
         this.tileSize = 60;
         this.offset = { x: 45, y: 350 };
@@ -21,21 +20,27 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
-        // --- A. 讀取存檔 ---
-        this.loadProgress();
+        // --- A. 讀取數據 ---
+        const savedData = localStorage.getItem('match3_save_data');
+        if (savedData) {
+            const data = JSON.parse(savedData);
+            Object.assign(logic, data);
+        } else {
+            logic.initBoard();
+        }
 
-        // --- B. 戰鬥 UI 佈局 ---
+        // --- B. UI 佈局 ---
         this.add.rectangle(225, 160, 420, 280, 0x333333).setStrokeStyle(2, 0x555555);
         
         this.levelText = this.add.text(225, 20, `LEVEL: ${logic.currentLevel} | 玩家等級: ${logic.playerLevel}`, { 
-            fontSize: '20px', color: '#aaaaaa' 
+            fontSize: '18px', color: '#aaaaaa' 
         }).setOrigin(0.5);
 
-        this.hpText = this.add.text(50, 40, `BOSS HP: ${Math.max(0, logic.monsterHP)}`, { 
+        this.hpText = this.add.text(50, 40, `BOSS: ${Math.max(0, logic.monsterHP)}`, { 
             fontSize: '28px', color: '#ff4444', fontStyle: 'bold' 
         });
         
-        this.playerHPText = this.add.text(50, 80, `PLAYER HP: ${logic.playerHP} / ${logic.playerMaxHP}`, { 
+        this.playerHPText = this.add.text(50, 80, `HP: ${logic.playerHP} / ${logic.playerMaxHP}`, { 
             fontSize: '24px', color: '#44ff44', fontStyle: 'bold' 
         });
 
@@ -43,33 +48,22 @@ class GameScene extends Phaser.Scene {
         this.expText = this.add.text(50, 115, `EXP: ${logic.playerEXP} / ${logic.expToNextLevel}`, {
             fontSize: '14px', color: '#ffff00'
         });
-        this.expBarBg = this.add.graphics().fillStyle(0x000000, 0.5).fillRect(50, 135, 350, 8);
+        this.add.graphics().fillStyle(0x000000, 0.5).fillRect(50, 135, 350, 8);
         this.expBar = this.add.graphics();
         
-        this.statusText = this.add.text(50, 150, `攻擊力: ${logic.baseAttackPower} | 倍率: x1.00`, { 
+        this.statusText = this.add.text(50, 150, `攻擊力: ${logic.baseAttackPower}`, { 
             fontSize: '16px', color: '#ffffff' 
         });
 
-        // 返回主畫面按鈕
-        let homeBtn = this.add.text(400, 30, "🏠", { fontSize: '30px' }).setInteractive();
+        // 返回主選單按鈕
+        let homeBtn = this.add.text(410, 30, "🏠", { fontSize: '30px' }).setInteractive();
         homeBtn.on('pointerdown', () => this.scene.start('MainMenu'));
 
-        // --- C. 初始化棋盤 ---
         this.updateExpUI();
         this.createBoard();
     }
 
-    // --- 核心方法 (原本的 function 改為 method) ---
-
-    loadProgress() {
-        const savedData = localStorage.getItem('match3_save_data');
-        if (savedData) {
-            const data = JSON.parse(savedData);
-            Object.assign(logic, data); // 快速同步數據
-        } else {
-            logic.initBoard();
-        }
-    }
+    // --- 核心戰鬥方法 ---
 
     updateExpUI() {
         this.expBar.clear();
@@ -77,7 +71,6 @@ class GameScene extends Phaser.Scene {
         let ratio = Math.min(1, logic.playerEXP / logic.expToNextLevel);
         this.expBar.fillRect(50, 135, 350 * ratio, 8);
         this.expText.setText(`EXP: ${logic.playerEXP} / ${logic.expToNextLevel}`);
-        this.levelText.setText(`LEVEL: ${logic.currentLevel} | 玩家等級: ${logic.playerLevel}`);
     }
 
     createBoard() {
@@ -98,7 +91,6 @@ class GameScene extends Phaser.Scene {
         sprite.setData('pos', { r, c });
         sprite.on('pointerdown', () => this.handleSelect(sprite));
         this.sprites[r][c] = sprite;
-        return sprite;
     }
 
     handleSelect(sprite) {
@@ -129,7 +121,6 @@ class GameScene extends Phaser.Scene {
         if (matches.length > 0) {
             await this.processMatches(matches);
         } else {
-            // 交換回去
             let undo = logic.board[p1.r][p1.c];
             logic.board[p1.r][p1.c] = logic.board[p2.r][p2.c];
             logic.board[p2.r][p2.c] = undo;
@@ -138,11 +129,55 @@ class GameScene extends Phaser.Scene {
         this.isAnimating = false;
     }
 
-    // ... (其餘 processMatches, handleVictory, dropAndFill 邏輯皆移入此類別並加 this) ...
-    // 注意：存檔時請呼叫 logic.saveGameProgress() 或自定義方法
+    performSwapAnimation(p1, p2) {
+        return new Promise(resolve => {
+            let s1 = this.sprites[p1.r][p1.c];
+            let s2 = this.sprites[p2.r][p2.c];
+            this.tweens.add({ targets: s1, x: this.offset.x + p2.c * this.tileSize, y: this.offset.y + p2.r * this.tileSize, duration: 200 });
+            this.tweens.add({
+                targets: s2, x: this.offset.x + p1.c * this.tileSize, y: this.offset.y + p1.r * this.tileSize, duration: 200,
+                onComplete: () => {
+                    this.sprites[p1.r][p1.c] = s2;
+                    this.sprites[p2.r][p2.c] = s1;
+                    s1.setData('pos', { r: p2.r, c: p2.c });
+                    s2.setData('pos', { r: p1.r, c: p1.c });
+                    resolve();
+                }
+            });
+        });
+    }
+
+    async processMatches(matches) {
+        let result = logic.calculateEffect(matches);
+        this.hpText.setText(`BOSS: ${Math.max(0, logic.monsterHP)}`);
+        
+        // 消除動畫
+        let promises = matches.map(m => {
+            let s = this.sprites[m.r][m.c];
+            logic.board[m.r][m.c] = null;
+            return new Promise(res => {
+                this.tweens.add({ targets: s, scale: 0, alpha: 0, duration: 200, onComplete: () => { s.destroy(); res(); } });
+            });
+        });
+        await Promise.all(promises);
+        await this.dropAndFill();
+        
+        if (logic.monsterHP <= 0) {
+            this.handleVictory();
+        } else {
+            this.handleMonsterTurn();
+        }
+    }
+
+    // ... 其他方法 (dropAndFill, handleMonsterTurn 等) 均比照辦理 ...
+    handleVictory() {
+        logic.nextLevel();
+        this.add.text(225, 400, "戰鬥勝利！", { fontSize: '48px', color: '#ffff00' }).setOrigin(0.5);
+        setTimeout(() => this.scene.start('MainMenu'), 2000);
+    }
 }
 
-// 3. 啟動配置 (包含 MainMenu 與 GameScene)
+// --- 4. 最終啟動配置 (請確認順序) ---
 const config = {
     type: Phaser.AUTO,
     width: 450,
@@ -150,7 +185,7 @@ const config = {
     backgroundColor: '#1a1a1a',
     parent: 'game-container',
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-    scene: [MainMenu, GameScene] // 第一個是啟動場景
+    scene: [MainMenu, GameScene] // MainMenu 先載入
 };
 
 const game = new Phaser.Game(config);

@@ -87,7 +87,7 @@ function create() {
         fontSize: '16px', color: '#ffffff' 
     });
 
-    this.add.text(225, 310, "拖拽方塊進行消除", { fontSize: '14px', color: '#888' }).setOrigin(0.5);
+    this.add.text(225, 310, "滑動方塊進行消除", { fontSize: '14px', color: '#888' }).setOrigin(0.5);
 
     // --- 3. 初始化 Hand (傳入 swapTiles 作為回調) ---
     hand = new Hand(this, logic, tileSize, offset, (p1, p2) => {
